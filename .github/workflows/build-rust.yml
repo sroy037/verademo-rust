@@ -70,7 +70,8 @@ jobs:
       - name: Zip Rust artifact for Veracode
         working-directory: source-code
         run: |
-          zip -r rust-artifact.zip target/release
+          BIN_NAME=$(basename target/release/* | head -n 1)
+          zip rust-artifact.zip target/release/$BIN_NAME
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

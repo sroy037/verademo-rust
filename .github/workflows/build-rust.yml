@@ -1,0 +1,80 @@
+name: Veracode Build Artifact
+run-name: Veracode Build Artifact
+
+on:
+  repository_dispatch:
+    types: [test-custom-build]
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    name: register
+    steps:
+      - name: Register build
+        id: register-build
+        uses: veracode/github-actions-integration-helper@main
+        with:
+          action: registerBuild
+          token: ${{ github.event.client_payload.token }}
+          appname: ${{ github.event.client_payload.user_config.profile_name }}
+          source_repository: ${{ github.event.client_payload.repository.full_name }}
+          check_run_id: ${{ github.run_id }}
+          check_run_name: ${{ github.workflow }}
+          head_sha: ${{ github.event.client_payload.sha }}
+          event_type: ${{ github.event.client_payload.event_type }}
+          branch: ${{ github.event.client_payload.user_config.sandbox_scan.branch }}
+          issue_trigger_flow: ${{ github.event.client_payload.user_config.issue_trigger_flow }}
+
+  build:
+    needs: register
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository.full_name }}
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ github.event.client_payload.token }}
+          path: source-code
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            source-code/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('source-code/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Rust format check
+        working-directory: source-code
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: Build (release)
+        working-directory: source-code
+        run: cargo build --release
+
+      - name: Run tests
+        working-directory: source-code
+        run: cargo test --release
+
+      - name: Zip Rust artifact for Veracode
+        working-directory: source-code
+        run: |
+          zip -r rust-artifact.zip target/release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veracode-artifact
+          path: source-code/rust-artifact.zip
+          if-no-files-found: error

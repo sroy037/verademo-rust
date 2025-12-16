@@ -40,8 +40,10 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+
+      # Required for pinned toolchains (rust-toolchain.toml)
+      - name: Install rustfmt
+        run: rustup component add rustfmt
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -59,20 +61,24 @@ jobs:
         run: cargo fmt --all -- --check
         continue-on-error: true
 
-      - name: Build (release)
+      # Ensure debug symbols are included (required by Veracode)
+      - name: Build (release with debug symbols)
         working-directory: source-code
-        run: cargo build --release
+        run: |
+          RUSTFLAGS="-C debuginfo=2" cargo build --release
 
       - name: Run tests
         working-directory: source-code
         run: cargo test --release
 
+      # Package ONLY the executable(s) – avoids corrupt headers
       - name: Zip Rust artifact for Veracode
         working-directory: source-code
         run: |
-          BIN=$(find target/release -maxdepth 1 -type f -executable)
-          echo "Detected binary: $BIN"
-          zip rust-artifact.zip $BIN
+          BINARIES=$(find target/release -maxdepth 1 -type f -executable)
+          echo "Detected binaries:"
+          echo "$BINARIES"
+          zip rust-artifact.zip $BINARIES
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
